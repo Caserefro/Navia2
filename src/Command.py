@@ -1,3 +1,4 @@
+import re
 
 # Words Whisper outputs that are NOT commands
 NOISE_WORDS = {
