@@ -1,4 +1,5 @@
 import asyncio
+
 import serial_asyncio
 import websockets
 
@@ -73,7 +74,13 @@ async def main():
     # Start WebSocket server
     # ping_interval=None disables the SERVER pinging the CLIENT.
     # Let the Client manage the pings to reduce network chatter.
-    async with websockets.serve(ws_handler, "0.0.0.0", 8765, ping_interval=None):
+    async with websockets.serve(
+            ws_handler,
+            "0.0.0.0",
+            8765,
+            ping_interval=None,  # Disable server pings
+            ping_timeout=None  # Disable ping timeout
+    ):
         print("WebSocket server started on ws://0.0.0.0:8765")
         # Keep the server running forever
         await asyncio.get_running_loop().create_future()

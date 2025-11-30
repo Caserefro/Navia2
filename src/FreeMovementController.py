@@ -88,14 +88,17 @@ async def main():
     while True:
         try:
             print(f"Connecting to {WS_URL} ...")
-            async with websockets.connect(WS_URL, ping_interval=20, ping_timeout=20) as ws:
+            async with websockets.connect(
+                    WS_URL,
+                    ping_interval=None,  # Disable client pings
+                    ping_timeout=None  # Disable ping timeout
+            ) as ws:
                 print("Connected! 🎉")
                 await send_controller(ws)
 
         except Exception as e:
             print(f"❌ Connection error: {e}")
             print("🔄 Reconnecting in 2 seconds...")
-            await asyncio.sleep(2)
 
 
 asyncio.run(main())
