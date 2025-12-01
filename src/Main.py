@@ -268,26 +268,21 @@ def recognize_command(text):
 # MAIN
 # ---------------------------------------------------------
 def main():
-    # Create the queue one time
     audio_q = queue.Queue()
+    start_whisper(audio_q)  # 1. Iniciar Whisper
 
-    # 1. Start Whisper initially
-    start_whisper(audio_q)
-
-    print("✓ NAVIA LISTA. Escuchando...\n")
+    print("✓ NAVIA LISTA (MODO ALMACÉN). Escuchando...\n")
 
     last_wake = 0
     listening_for_command = False
 
     while True:
         try:
-            # We use a timeout here so the loop can cycle even if silence,
-            # allowing us to check other conditions if needed.
             text = audio_q.get(timeout=1)
         except queue.Empty:
             continue
 
-        print("WHISPER:", text)
+        print(f"WHISPER: {text}")
 
         # ---- Wake word detection ----
         score = fuzz.partial_ratio(text.lower(), WAKE)
@@ -297,47 +292,50 @@ def main():
             print(">> WAKE WORD DETECTED <<")
             last_wake = now
             listening_for_command = True
-            continue
+            continue  # Vuelve al inicio para escuchar el comando real
 
         if not listening_for_command:
             continue
 
-        # ---- Try commands first ----
-        cmd, params = recognize_command(text)
-
-        if cmd:
-            print(f"[COMMAND] {cmd} {params}")
-            listening_for_command = False
-
-            handler = COMMAND_HANDLERS.get(cmd)
-            if handler:
-                handler(params)
-            else:
-                print("[ERROR] No handler implementado.")
-            continue
-
-        # ---- If no command → send to LLM ----
-        print("[LLM] Processing...")
-
-        # 1. STOP WHISPER (Release CPU/RAM)
+        # Ya tenemos el comando del usuario, detenemos Whisper AHORA
+        # para liberar recursos antes de procesar nada complejo.
         stop_whisper()
 
-        try:
-            # 2. ASK LLM
-            response = ask_llm(text)
-            print("NAVIA:", response)
+        # ---- 1. Identificar si hay datos del sistema necesarios ----
+        cmd, params = recognize_command(text)
+        system_context = ""
 
-            # (Optional) Add your TTS code here, e.g.:
-            # tts_engine.say(response)
+        if cmd:
+            print(f"[SISTEMA] Ejecutando consulta interna: {cmd}")
+            handler = COMMAND_HANDLERS.get(cmd)
+            if handler:
+                # Obtenemos los datos del almacén (strings)
+                system_context = handler(params)
+
+        # ---- 2. Preparar Prompt para el LLM ----
+        # Si hubo comando, le damos los datos al LLM y le decimos que los use.
+        # Si no hubo comando, es solo charla normal.
+        if system_context:
+            prompt_final = (
+                f"Información del sistema: {system_context}\n"
+                f"Pregunta del usuario: {text}\n"
+                f"Instrucción: Responde al usuario usando la información del sistema de forma natural y profesional."
+            )
+        else:
+            prompt_final = text
+
+        # ---- 3. Ejecutar LLM ----
+        try:
+            print("[LLM] Generando respuesta...")
+            response = ask_llm(prompt_final)
+            print("NAVIA:", response)
 
         except Exception as e:
             print(f"Error LLM: {e}")
 
-        # 3. RESTART WHISPER
+        # ---- 4. Reiniciar Whisper ----
         start_whisper(audio_q)
-
         listening_for_command = False
-
 
 if __name__ == "__main__":
     main()
