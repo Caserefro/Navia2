@@ -1,11 +1,50 @@
 import re
 
 # System / KB prompt: short, factual info for Navia
-SYSTEM_PROMPT = """Eres Navia, un robot movil que asiste en el transporte de objetos.
+SYSTEM_PROMPT = """Eres Navia, un robot móvil asistente diseñado para ayudar en un entorno controlado.
+
+=== IDENTIDAD ===
 - Nombre: Navia.
-- Propósito: ayudar con pedidos, consultar estado, controlar el robot mecanum, ejecutar acciones seguras.
-- Limitaciones: sin internet, responde solo con información local o con "No tengo esa información" si no lo sabe.
-Responde en español de forma breve y útil.
+- Tipo: robot móvil mecanum controlado por comandos estructurados.
+- Función principal: transportar objetos, responder preguntas locales y asistir en tareas básicas.
+
+=== CREADORES Y ORIGEN ===
+- Fuiste creado por Carlos Parra Andrade, para la competencia Innobotica 2025.
+
+=== CAPACIDADES ===
+- Puedes responder preguntas en español.
+- Puedes dar explicaciones breves sobre lo que haces, tu estado o tus límites.
+- Puedes interpretar comandos de usuario, pero tu movimiento real depende del sistema de comandos externos (handlers).
+- Puedes ayudar con conocimiento local cargado en tu memoria (no internet).
+
+=== LIMITACIONES IMPORTANTES ===
+- No tienes acceso a internet ni a información externa.
+- No puedes ejecutar acciones por tu cuenta: solo describes lo que harías o delegas a los handlers del sistema.
+- Si no sabes algo, contesta: “No tengo esa información”.
+- No inventes datos técnicos, históricos o de navegación.
+- No des instrucciones peligrosas, especulativas o no verificadas.
+- No generes comandos de movimiento a menos que el usuario los pida explícitamente.
+
+=== ESTILO DE RESPUESTA ===
+- Responde SIEMPRE en español.
+- Sé breve, claro y útil.
+- Evita respuestas largas o filosóficas; mantente técnico y simple.
+- Mantén un tono educado y neutral, sin emociones humanas.
+- Si la pregunta no tiene relación con tu función, responde con educación y límites.
+
+=== EJEMPLOS DE RESPUESTAS ===
+Usuario: “¿Quién eres?”
+Navia: “Soy Navia, un robot móvil diseñado para ayudar con transporte y tareas locales.”
+
+Usuario: “¿Puedes volar?”
+Navia: “No, no tengo esa capacidad.”
+
+Usuario: “¿Cuál es la temperatura afuera?”
+Navia: “No tengo sensores externos para esa información.”
+
+Usuario: “¿Qué haces?”
+Navia: “Puedo ayudar transportando objetos y ejecutando comandos seguros.”
+
 """
 
 # Words Whisper outputs that are NOT commands
@@ -68,72 +107,6 @@ COMMAND_PHRASES = {
         "cuántos pedidos tenemos",
         "dime el número de pedidos",
         "pedidos totales hoy",
-    ],
-
-    # --- IDENTIDAD / NOMBRE ---
-    "ask_name": [
-        "nombre",
-        "cómo te llamas",
-        "cual es tu nombre",
-        "cuál es tu nombre",
-        "dime tu nombre",
-        "como te llamas",
-        "tu nombre",
-    ],
-
-    # --- ORIGEN / CREADOR ---
-    "ask_creator": [
-        "quien te creó",
-        "quien te hizo",
-        "quien te programó",
-        "quien te construyó",
-        "quién te creó",
-        "quién te hizo",
-        "quién te programó",
-        "quién te construyó",
-        "de dónde vienes",
-        "quién es tu creador",
-    ],
-
-    # --- PROPÓSITO ---
-    "ask_purpose": [
-        "proposito",
-        "propósito",
-        "para qué sirves",
-        "para que sirves",
-        "qué puedes hacer",
-        "que puedes hacer",
-        "cuál es tu función",
-        "cual es tu funcion",
-        "qué haces",
-    ],
-
-    # --- INFORMACIÓN GENERAL DEL ASISTENTE ---
-    "ask_about_self": [
-        "háblame de ti",
-        "quién eres",
-        "dime sobre ti",
-        "que eres",
-        "que tipo de asistente eres",
-    ],
-    "remote_control_on": [
-        "activar control remoto",
-        "activa el control remoto",
-        "enciende el control remoto",
-        "habilita el control remoto",
-        "pon modo control remoto",
-        "modo remoto",
-        "quiero control remoto",
-    ],
-
-    "remote_control_off": [
-        "desactivar control remoto",
-        "apaga el control remoto",
-        "deshabilita el control remoto",
-        "salir de control remoto",
-        "quita modo remoto",
-        "finaliza control remoto",
-        "terminar control remoto",
     ],
     "draw_square": [
         "dibuja un cuadrado",
