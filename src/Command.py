@@ -105,7 +105,35 @@ COMMAND_PHRASES = {
         "dime sobre ti",
         "que eres",
         "que tipo de asistente eres",
-    ]
+    ],
+    "remote_control_on": [
+        "activar control remoto",
+        "activa el control remoto",
+        "enciende el control remoto",
+        "habilita el control remoto",
+        "pon modo control remoto",
+        "modo remoto",
+        "quiero control remoto",
+    ],
+
+    "remote_control_off": [
+        "desactivar control remoto",
+        "apaga el control remoto",
+        "deshabilita el control remoto",
+        "salir de control remoto",
+        "quita modo remoto",
+        "finaliza control remoto",
+        "terminar control remoto",
+    ],
+    "draw_square": [
+        "dibuja un cuadrado",
+        "haz un cuadrado",
+        "traza un cuadrado",
+        "quiero un cuadrado",
+        "puedes dibujar un cuadrado",
+        "crea un cuadrado",
+        "marca un cuadrado",
+    ],
 }
 
 # ---------------------------------------------------------

@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 import queue
-import re
 import subprocess
 import threading
 import time
-from Command import *
+
 from fuzzywuzzy import fuzz
 
+from Command import *
+from Handlers import *
 # ---------- CONFIG ----------
 WAKE = "navia"
 WAKE_FUZZ_THRESHOLD = 72
 WAKE_COOLDOWN_S = 1.0
+
 
 # ---------------------------------------------------------
 # HELPERS
@@ -77,6 +79,7 @@ def match_pattern_command(text):
 
     return None, None
 
+
 # ---------------------------------------------------------
 # FUZZY MATCHING
 # ---------------------------------------------------------
@@ -121,6 +124,7 @@ def recognize_command(text):
 # ---------------------------------------------------------
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 BRACKET_ONLY = re.compile(r"^\[(.*?)\]$")
+
 
 def is_noise(text):
     clean = (
@@ -198,8 +202,15 @@ def main():
 
         # ---- Command detection ----
         cmd, params = recognize_command(text)
+
         if cmd:
             print(f"[COMMAND] {cmd} {params}")
+
+            handler = COMMAND_HANDLERS.get(cmd)
+            if handler:
+                handler(params)
+            else:
+                print("[ERROR] No handler implemented para este comando.")
         else:
             print("[NO MATCH]")
 
