@@ -2,7 +2,7 @@ import queue
 import subprocess
 import threading
 import time
-
+from llama_cpp import Llama
 from fuzzywuzzy import fuzz
 
 from Command import *
@@ -45,7 +45,7 @@ def ask_llm(prompt: str) -> str:
 
     completion = llm(
         prompt=chat_prompt,
-        max_tokens=250,
+        max_tokens=60,
         temperature=0.6,
         stop=["<|user|>", "<|system|>"],
     )
@@ -191,11 +191,7 @@ def reader_thread(proc, q):
         # Deliver clean line to main thread
         q.put(line)
 
-
-# ---------------------------------------------------------
-# MAIN
-# ---------------------------------------------------------
-def main():
+def start_whisper():
     whisper_cmd = [
         "/home/pi/Downloads/whisper.cpp/build/bin/whisper-stream",
         "-m", "/home/pi/Downloads/whisper.cpp/models/ggml-base-q5_1.bin",
@@ -215,6 +211,13 @@ def main():
     audio_q = queue.Queue()
     threading.Thread(target=reader_thread, args=(proc, audio_q), daemon=True).start()
 
+    return proc, audio_q
+
+# ---------------------------------------------------------
+# MAIN
+# ---------------------------------------------------------
+def main():
+    proc, audio_q = start_whisper()
     print("✓ NAVIA LISTA. Escuchando...\n")
 
     last_wake = 0
@@ -224,7 +227,7 @@ def main():
         text = audio_q.get()
         print("WHISPER:", text)
 
-        # ---- Wake word detection ----
+        # --- Wake word ---
         score = fuzz.partial_ratio(text.lower(), WAKE)
         now = time.time()
 
@@ -237,7 +240,7 @@ def main():
         if not listening_for_command:
             continue
 
-        # ---- Try commands first ----
+        # --- Commands first ---
         cmd, params = recognize_command(text)
 
         if cmd:
@@ -251,13 +254,24 @@ def main():
                 print("[ERROR] No handler implementado.")
             continue
 
-        # ---- If no command → send to LLM ----
+        # --- LLM mode ---
         print("[LLM]")
+
+        # 🔥 STOP WHISPER
+        print("⏸️ Pausando escucha...")
+        proc.terminate()
+        proc.wait()
+        time.sleep(0.2)
+
+        # Run LLM
         response = ask_llm(text)
         print("NAVIA:", response)
 
-        listening_for_command = False
+        # 🔥 RESTART WHISPER
+        print("▶️ Reanudando escucha...")
+        proc, audio_q = start_whisper()
 
+        listening_for_command = False
 
 if __name__ == "__main__":
     main()
