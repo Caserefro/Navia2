@@ -37,11 +37,17 @@ def ask_llm(prompt: str) -> str:
     """Send Spanish prompt to LLM and return answer."""
     print("### LLM INPUT:", prompt)
 
+    chat_prompt = (
+        f"<|system|>\n{SYSTEM_PROMPT}\n"
+        f"<|user|>\n{prompt}\n"
+        f"<|assistant|>\n"
+    )
+
     completion = llm(
-        prompt=f"Responde en español:\nUsuario: {prompt}\nAsistente:",
-        max_tokens=300,
+        prompt=chat_prompt,
+        max_tokens=250,
         temperature=0.6,
-        stop=["Usuario:", "Asistente:"],
+        stop=["<|user|>", "<|system|>"],
     )
 
     answer = completion["choices"][0]["text"].strip()
