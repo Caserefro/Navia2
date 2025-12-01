@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import queue
 import subprocess
 import threading
@@ -13,6 +12,19 @@ WAKE = "navia"
 WAKE_FUZZ_THRESHOLD = 72
 WAKE_COOLDOWN_S = 1.0
 
+MODEL_PATH = "/home/pi/Navia1/models/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+
+# ---------------------------------------------------------
+# LOAD LLM
+# ---------------------------------------------------------
+
+print("⏳ Cargando modelo LLM Qwen2.5-1.5B-Instruct…")
+llm = Llama(
+    model_path=MODEL_PATH,
+    n_ctx=2048,
+    n_threads=4,
+)
+print("✓ LLM cargado\n")
 
 # ---------------------------------------------------------
 # HELPERS
@@ -21,6 +33,20 @@ WAKE_COOLDOWN_S = 1.0
 def normalize_text(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip())
 
+def ask_llm(prompt: str) -> str:
+    """Send Spanish prompt to LLM and return answer."""
+    print("### LLM INPUT:", prompt)
+
+    completion = llm(
+        prompt=f"Responde en español:\nUsuario: {prompt}\nAsistente:",
+        max_tokens=300,
+        temperature=0.6,
+        stop=["Usuario:", "Asistente:"],
+    )
+
+    answer = completion["choices"][0]["text"].strip()
+    print("### LLM OUTPUT:", answer)
+    return answer
 
 def parse_number(txt: str):
     if not txt:
@@ -186,6 +212,7 @@ def main():
     print("✓ NAVIA LISTA. Escuchando...\n")
 
     last_wake = 0
+    listening_for_command = False
 
     while True:
         text = audio_q.get()
@@ -198,21 +225,32 @@ def main():
         if score >= WAKE_FUZZ_THRESHOLD and (now - last_wake) > WAKE_COOLDOWN_S:
             print(">> WAKE WORD DETECTED <<")
             last_wake = now
-            continue  # next message will be the command
+            listening_for_command = True
+            continue
 
-        # ---- Command detection ----
+        if not listening_for_command:
+            continue
+
+        # ---- Try commands first ----
         cmd, params = recognize_command(text)
 
         if cmd:
             print(f"[COMMAND] {cmd} {params}")
+            listening_for_command = False
 
             handler = COMMAND_HANDLERS.get(cmd)
             if handler:
                 handler(params)
             else:
-                print("[ERROR] No handler implemented para este comando.")
-        else:
-            print("[NO MATCH]")
+                print("[ERROR] No handler implementado.")
+            continue
+
+        # ---- If no command → send to LLM ----
+        print("[LLM]")
+        response = ask_llm(text)
+        print("NAVIA:", response)
+
+        listening_for_command = False
 
 
 if __name__ == "__main__":

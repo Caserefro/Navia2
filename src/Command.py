@@ -1,9 +1,19 @@
 import re
 
+# System / KB prompt: short, factual info for Navia
+SYSTEM_PROMPT = """Eres Navia, un asistente local en una Raspberry Pi.
+- Nombre: Navia.
+- Propósito: ayudar con pedidos, consultar estado, controlar el robot mecanum, ejecutar acciones seguras.
+- Limitaciones: sin internet, responde solo con información local o con "No tengo esa información" si no lo sabe.
+Responde en español de forma breve y útil.
+"""
+
 # Words Whisper outputs that are NOT commands
 NOISE_WORDS = {
     "musica",
     "música",
+    "música.",
+    "musica.",
     "risa",
     "risas",
     "aplausos",
