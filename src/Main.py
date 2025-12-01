@@ -48,7 +48,7 @@ def start_whisper(audio_q):
 
     whisper_cmd = [
         "/home/pi/Downloads/whisper.cpp/build/bin/whisper-stream",
-        "-m", "/home/pi/Downloads/whisper.cpp/models/ggml-small-q5_1.bin",
+        "-m", "/home/pi/Downloads/whisper.cpp/models/ggml-base-q5_1.bin",
         "--language", "es",
         "-t", "6",  # Uses 6 threads
         "-ac", "512",
