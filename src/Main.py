@@ -2,17 +2,24 @@ import queue
 import subprocess
 import threading
 import time
+import re
+import signal  # <--- Added for sending Ctrl+C signal
 from llama_cpp import Llama
 from fuzzywuzzy import fuzz
 
+# Assuming these exist in your local files
 from Command import *
 from Handlers import *
+
 # ---------- CONFIG ----------
 WAKE = "navia"
 WAKE_FUZZ_THRESHOLD = 72
 WAKE_COOLDOWN_S = 1.0
 
 MODEL_PATH = "/home/pi/Navia1/models/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+
+# Global variable to track the subprocess
+current_whisper_proc = None
 
 # ---------------------------------------------------------
 # LOAD LLM
@@ -26,6 +33,110 @@ llm = Llama(
 )
 print("✓ LLM cargado\n")
 
+
+# ---------------------------------------------------------
+# WHISPER MANAGEMENT (NEW)
+# ---------------------------------------------------------
+
+def start_whisper(audio_q):
+    """Starts the Whisper subprocess and its reader thread."""
+    global current_whisper_proc
+
+    # Prevent starting if already running
+    if current_whisper_proc is not None:
+        return
+
+    whisper_cmd = [
+        "/home/pi/Downloads/whisper.cpp/build/bin/whisper-stream",
+        "-m", "/home/pi/Downloads/whisper.cpp/models/ggml-base-q5_1.bin",
+        "--language", "es",
+        "-t", "6",  # Uses 6 threads
+        "-ac", "512",
+    ]
+
+    print(">> STARTING WHISPER (Listening)...")
+
+    current_whisper_proc = subprocess.Popen(
+        whisper_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+
+    # Start a new thread for this specific process instance
+    t = threading.Thread(target=reader_thread, args=(current_whisper_proc, audio_q), daemon=True)
+    t.start()
+
+
+def stop_whisper():
+    """Stops Whisper gracefully to free up RAM/CPU for the LLM."""
+    global current_whisper_proc
+
+    if current_whisper_proc:
+        print(">> PAUSING WHISPER (Freeing resources for LLM)...")
+
+        # Send SIGINT (Ctrl+C) to trigger the 'is_running = false' loop in C++
+        current_whisper_proc.send_signal(signal.SIGINT)
+
+        try:
+            # Give it 2 seconds to close files and free memory
+            current_whisper_proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            print("!! Whisper stuck, forcing kill...")
+            current_whisper_proc.kill()
+
+        current_whisper_proc = None
+
+
+# ---------------------------------------------------------
+# WHISPER READER
+# ---------------------------------------------------------
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+BRACKET_ONLY = re.compile(r"^\[(.*?)\]$")
+
+
+def is_noise(text):
+    if not text: return True
+    clean = (
+        text.lower()
+        .replace(".", "")
+        .replace("!", "")
+        .replace("?", "")
+        .strip()
+    )
+    # Ensure NOISE_WORDS is defined in your Command/Handlers file,
+    # otherwise define it here: NOISE_WORDS = {"música", "risa", "pasos", ...}
+    return clean in NOISE_WORDS
+
+
+def reader_thread(proc, q):
+    """Reads from the specific process provided in args."""
+    try:
+        # Loop over stdout. When proc dies, stdout closes and loop breaks.
+        for raw in proc.stdout:
+            # Remove ANSI escape codes
+            line = ANSI_RE.sub("", raw).strip()
+
+            if not line or line in ("\r", "\n"):
+                continue
+
+            # Extract inner content from [ ... ]
+            m = BRACKET_ONLY.match(line)
+            if m:
+                line = m.group(1).strip()
+
+            # Skip noise words like "Música", "Risa", etc.
+            if is_noise(line):
+                continue
+
+            # Deliver clean line to main thread
+            q.put(line)
+    except Exception as e:
+        # This might happen if we kill the process while reading
+        pass
+
+
 # ---------------------------------------------------------
 # HELPERS
 # ---------------------------------------------------------
@@ -33,10 +144,12 @@ print("✓ LLM cargado\n")
 def normalize_text(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip())
 
+
 def ask_llm(prompt: str) -> str:
     """Send Spanish prompt to LLM and return answer."""
     print("### LLM INPUT:", prompt)
 
+    # Note: Ensure SYSTEM_PROMPT is defined in your imports
     chat_prompt = (
         f"<|system|>\n{SYSTEM_PROMPT}\n"
         f"<|user|>\n{prompt}\n"
@@ -53,6 +166,7 @@ def ask_llm(prompt: str) -> str:
     answer = completion["choices"][0]["text"].strip()
     print("### LLM OUTPUT:", answer)
     return answer
+
 
 def parse_number(txt: str):
     if not txt:
@@ -75,7 +189,6 @@ def match_pattern_command(text):
             continue
 
         g = m.groupdict()
-
         value = parse_number(g.get("value"))
         unit = g.get("unit")
         sign = g.get("sign")
@@ -152,68 +265,14 @@ def recognize_command(text):
 
 
 # ---------------------------------------------------------
-# WHISPER READER
-# ---------------------------------------------------------
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
-BRACKET_ONLY = re.compile(r"^\[(.*?)\]$")
-
-
-def is_noise(text):
-    clean = (
-        text.lower()
-        .replace(".", "")
-        .replace("!", "")
-        .replace("?", "")
-        .strip()
-    )
-    return clean in NOISE_WORDS
-
-
-def reader_thread(proc, q):
-    for raw in proc.stdout:
-        # Remove ANSI escape codes
-        line = ANSI_RE.sub("", raw).strip()
-
-        if not line or line in ("\r", "\n"):
-            continue
-
-        # Extract inner content from [ ... ]
-        m = BRACKET_ONLY.match(line)
-        if m:
-            line = m.group(1).strip()
-
-        # Skip noise words like "Música", "Risa", etc.
-        if is_noise(line):
-            # print for debug (optional)
-            # print(f"[WHISPER-IGNORED NOISE]: {line}")
-            continue
-
-        # Deliver clean line to main thread
-        q.put(line)
-
-
-# ---------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------
 def main():
-    whisper_cmd = [
-        "/home/pi/Downloads/whisper.cpp/build/bin/whisper-stream",
-        "-m", "/home/pi/Downloads/whisper.cpp/models/ggml-base-q5_1.bin",
-        "--language", "es",
-        "-t", "6",
-        "-ac", "512",
-    ]
-
-    proc = subprocess.Popen(
-        whisper_cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-
+    # Create the queue one time
     audio_q = queue.Queue()
-    threading.Thread(target=reader_thread, args=(proc, audio_q), daemon=True).start()
+
+    # 1. Start Whisper initially
+    start_whisper(audio_q)
 
     print("✓ NAVIA LISTA. Escuchando...\n")
 
@@ -221,7 +280,13 @@ def main():
     listening_for_command = False
 
     while True:
-        text = audio_q.get()
+        try:
+            # We use a timeout here so the loop can cycle even if silence,
+            # allowing us to check other conditions if needed.
+            text = audio_q.get(timeout=1)
+        except queue.Empty:
+            continue
+
         print("WHISPER:", text)
 
         # ---- Wake word detection ----
@@ -252,9 +317,24 @@ def main():
             continue
 
         # ---- If no command → send to LLM ----
-        print("[LLM]")
-        response = ask_llm(text)
-        print("NAVIA:", response)
+        print("[LLM] Processing...")
+
+        # 1. STOP WHISPER (Release CPU/RAM)
+        stop_whisper()
+
+        try:
+            # 2. ASK LLM
+            response = ask_llm(text)
+            print("NAVIA:", response)
+
+            # (Optional) Add your TTS code here, e.g.:
+            # tts_engine.say(response)
+
+        except Exception as e:
+            print(f"Error LLM: {e}")
+
+        # 3. RESTART WHISPER
+        start_whisper(audio_q)
 
         listening_for_command = False
 
