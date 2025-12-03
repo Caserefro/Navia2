@@ -46,6 +46,15 @@ Navia: “Puedo ayudar transportando objetos y ejecutando comandos seguros.”
 
 """
 
+WAKE_VARIANTS = [
+    "navia", "navi", "navía",
+    "nadia", "nabia", "navio",
+    "no habia", "no avia", "no via", "no vio",
+    "navidad",   # whisper often outputs this weirdly
+    "labia",     # yes whisper sometimes :(
+]
+
+
 # Words Whisper outputs that are NOT commands
 NOISE_WORDS = {
     "musica",

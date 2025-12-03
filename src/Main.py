@@ -6,6 +6,7 @@ import re
 import signal  # <--- Added for sending Ctrl+C signal
 from llama_cpp import Llama
 from fuzzywuzzy import fuzz
+import unicodedata
 
 # Assuming these exist in your local files
 from Command import *
@@ -263,6 +264,23 @@ def recognize_command(text):
 
     return None, None
 
+def clean_text(t: str) -> str:
+    t = t.lower()
+    t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')  # remove accents
+    t = re.sub(r'[^a-zñ ]', '', t)  # remove punctuation/numbers
+    return t.strip()
+
+
+def is_wake_word(text):
+    t = clean_text(text)
+    words = t.split()
+
+    for w in words:
+        for pattern in WAKE_VARIANTS:
+            score = fuzz.ratio(w, pattern)
+            if score >= WAKE_FUZZ_THRESHOLD:
+                return True
+    return False
 
 # ---------------------------------------------------------
 # MAIN
@@ -288,11 +306,11 @@ def main():
         score = fuzz.partial_ratio(text.lower(), WAKE)
         now = time.time()
 
-        if score >= WAKE_FUZZ_THRESHOLD and (now - last_wake) > WAKE_COOLDOWN_S:
+        if is_wake_word(text) and (now - last_wake) > WAKE_COOLDOWN_S:
             print(">> WAKE WORD DETECTED <<")
             last_wake = now
             listening_for_command = True
-            continue  # Vuelve al inicio para escuchar el comando real
+            continue
 
         if not listening_for_command:
             continue
