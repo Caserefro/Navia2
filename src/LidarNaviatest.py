@@ -1,6 +1,8 @@
 import asyncio
 import websockets
 import json
+import contextlib
+import datetime
 from rplidar import RPLidar, RPLidarException
 
 # --- CONFIGURATION ---
@@ -9,110 +11,122 @@ LIDAR_BAUD = 115200
 WS_PORT = 8765
 
 connected_clients = set()
-lidar_instance = None  # Global reference for safe cleanup
 
 
-async def lidar_reader():
-    """
-    Connects to the RPLidar, reads full scans, and broadcasts them.
-    Runs the blocking 'next(iterator)' in a separate thread executor.
-    """
-    global lidar_instance
-    print(f"[LIDAR] Connecting to {LIDAR_PORT}...")
-
+# --- HELPER FUNCTION (THE FIX) ---
+# We need this because 'next()' can raise StopIteration, which crashes asyncio executors.
+def _fetch_scan_safe(iterator):
     try:
-        lidar_instance = RPLidar(LIDAR_PORT, baudrate=LIDAR_BAUD)
+        return next(iterator)
+    except StopIteration:
+        raise Exception("Iterator stopped")
+    except Exception as e:
+        raise e
 
-        # Helper to stop things if they were left running
-        lidar_instance.stop()
-        lidar_instance.stop_motor()
-        await asyncio.sleep(1)  # Give it a breath
 
-        lidar_instance.start_motor()
+async def broadcast_callback(msg):
+    """Sends the message to all connected clients"""
+    if connected_clients:
+        payload = json.dumps(msg)
+        await asyncio.gather(
+            *[client.send(payload) for client in connected_clients],
+            return_exceptions=True
+        )
 
-        # Get the iterator. This is NOT a list, it's a generator.
-        # scan_generator yields lists of [quality, angle, distance]
-        scan_generator = lidar_instance.iter_scans()
+
+# --- YOUR ORIGINAL FUNCTION (Restored & Patched) ---
+async def lidar_loop():
+    lidar = None
+    try:
+        print(f'[LIDAR] Abriendo {LIDAR_PORT} @ {LIDAR_BAUD}')
+        lidar = RPLidar(LIDAR_PORT, baudrate=LIDAR_BAUD, timeout=3)
+
+        # FIX 1: Clean buffer before starting
+        lidar.stop()
+        lidar.stop_motor()
+        lidar.disconnect()
+        await asyncio.sleep(1)
+
+        lidar = RPLidar(LIDAR_PORT, baudrate=LIDAR_BAUD, timeout=3)
+        lidar.start_motor()
+        await asyncio.sleep(2)  # Wait for spin up
+
+        # Try to clean input if method exists
+        if hasattr(lidar, 'clean_input'):
+            lidar.clean_input()
+
+        print("[LIDAR] Motor spinning... starting scan.")
 
         loop = asyncio.get_running_loop()
 
-        print("[LIDAR] Scanning started.")
+        # FIX 2: Add max_buf_meas=8000 to prevent "Wrong body size"
+        it = lidar.iter_scans(max_buf_meas=8000, min_len=5)
+        seq = 0
 
         while True:
+            # FIX 3: Use _fetch_scan_safe instead of raw 'next'
             try:
-                # CRITICAL: next(scan_generator) is blocking! 
-                # We must run it in an executor to keep the WebSocket alive.
-                scan = await loop.run_in_executor(None, next, scan_generator)
+                scan = await loop.run_in_executor(None, _fetch_scan_safe, it)
+            except Exception as e:
+                print(f"[LIDAR] Glitch: {e} -> Resyncing...")
+                # Rapid recovery: Clean buffer and recreate iterator
+                try:
+                    lidar.clean_input()
+                except:
+                    pass
+                it = lidar.iter_scans(max_buf_meas=8000, min_len=5)
+                continue
 
-                # 'scan' format is usually: [(quality, angle, distance), ...]
-                # Let's clean it up for JSON (reduce data size if needed)
-                # We simply convert tuples to lists
-                points = [[angle, dist] for (qual, angle, dist) in scan]
+            seq += 1
 
-                # Create the payload
-                data = {
-                    "type": "scan",
-                    "count": len(points),
-                    "points": points
-                }
+            # Formato: [[ángulo, distancia, calidad], ...]
+            # Filter valid points (dist > 0) to save bandwidth
+            pts = [[a, d, q] for (q, a, d) in scan if d > 0]
 
-                json_data = json.dumps(data)
+            msg = {
+                "type": "scan",
+                "seq": seq,
+                "ts": datetime.datetime.now().isoformat(),
+                "points": pts
+            }
 
-                # Broadcast to all connected clients
-                if connected_clients:
-                    await asyncio.gather(
-                        *[client.send(json_data) for client in connected_clients],
-                        return_exceptions=True
-                    )
+            # Broadcast
+            await broadcast_callback(msg)
 
-            except RPLidarException as e:
-                print(f"[LIDAR] Protocol error: {e}. Retrying...")
-                lidar_instance.stop()
-                await asyncio.sleep(1)
-                lidar_instance.start_motor()
-
-    except Exception as e:
-        print(f"[LIDAR] Fatal Error: {e}")
-    finally:
-        print("[LIDAR] Stopping...")
-        if lidar_instance:
-            lidar_instance.stop()
-            lidar_instance.stop_motor()
-            lidar_instance.disconnect()
-
-
-async def ws_handler(websocket):
-    print(f"[WS] Client connected: {websocket.remote_address}")
-    connected_clients.add(websocket)
-    try:
-        async for message in websocket:
-            # Handle incoming messages from client (optional)
-            # You usually don't write raw bytes to the Lidar while it is scanning
-            print(f"[WS] Received: {message}")
-
-            if message == "stop":
-                print("Command received: STOP")
-                # Add logic here if you want to control the motor via WS
-
-    except websockets.exceptions.ConnectionClosed:
+    except (RPLidarException, OSError) as e:
+        print(f'[LIDAR] ⚠️ CRITICAL: {e}')
+    except asyncio.CancelledError:
         pass
     finally:
+        if lidar:
+            with contextlib.suppress(Exception):
+                lidar.stop()
+                lidar.stop_motor()
+                lidar.disconnect()
+        print('[LIDAR] loop terminado')
+
+
+# --- BOILERPLATE TO RUN IT ---
+async def ws_handler(websocket):
+    connected_clients.add(websocket)
+    try:
+        await websocket.wait_closed()
+    finally:
         connected_clients.remove(websocket)
-        print("[WS] Client disconnected")
 
 
 async def main():
-    # Start the LiDAR reader as a background task
-    asyncio.create_task(lidar_reader())
+    # Start LiDAR Loop
+    asyncio.create_task(lidar_loop())
 
-    # Start the WebSocket server
-    print(f"[SERVER] Starting WebSocket on 0.0.0.0:{WS_PORT}")
+    # Start Server
+    print(f"[SERVER] Running on ws://0.0.0.0:{WS_PORT}")
     async with websockets.serve(ws_handler, "0.0.0.0", WS_PORT):
-        await asyncio.get_running_loop().create_future()  # Run forever
+        await asyncio.get_running_loop().create_future()
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Server stopping by user request.")
+        print("Stopping...")
