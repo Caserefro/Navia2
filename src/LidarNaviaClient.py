@@ -6,7 +6,7 @@ import math
 import threading
 
 # --- CONFIGURATION ---
-SERVER_IP = "192.168.1.157"  # Keep matching your Pi
+SERVER_IP = "10.215.238.142"  # Keep matching your Pi
 PORT = 8765
 WINDOW_SIZE = 800
 MAX_DISTANCE_MM = 4000  # 4 meters radius
