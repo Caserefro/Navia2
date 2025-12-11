@@ -8,9 +8,9 @@ SERVER_HOST = "0.0.0.0"
 SERVER_PORT = 8000
 
 DEADZONE = 0.15
-ROTATION_STEP = 0.1
+ROTATION_STEP = 0.05
 ROTATION_DECAY = 0.02
-SEND_RATE = 0.1  # 100 ms
+SEND_RATE = 0.02  # 100 ms
 SMOOTH_ALPHA = 0.3
 
 connected_clients = set()
@@ -92,7 +92,7 @@ async def controller_loop():
         th = max(-1.0, min(1.0, th))
 
         # *** Final unified packet ***
-        packet = f"{x_s:.2f},{y_s:.2f},{th:.2f}"
+        packet = f"{-x_s:.2f},{y_s:.2f},{th:.2f}"
 
         # Send only if changed + at least one ESP32 connected
         if packet != last_packet and connected_clients:
