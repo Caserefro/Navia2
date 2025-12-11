@@ -1,4 +1,4 @@
-import Serialtest
+import serial
 import time
 
 # --- CONFIGURATION ---
