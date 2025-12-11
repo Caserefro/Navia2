@@ -5,7 +5,7 @@ import math
 import sys
 
 # --- Configuration ---
-WS_URL = "ws://10.215.238.141:8000"
+WS_URL = "ws://10.215.238.142:8000"
 
 DEADZONE = 0.15
 ROTATION_STEP = 0.05
