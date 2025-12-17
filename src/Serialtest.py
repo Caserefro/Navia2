@@ -1,79 +1,43 @@
 import serial
 import time
-import threading
-import sys
 
 # --- CONFIGURATION ---
-SERIAL_PORT = '/dev/ttyUSB1'  # Check if this is correct!
+# Linux/Raspberry Pi uses /dev/ttyUSBx or /dev/ttyACMx
+# Windows uses COMx (e.g., 'COM3')
+SERIAL_PORT = '/dev/ttyUSB1'
 BAUD_RATE = 115200
 
-# Global flag to control the loop
-running = True
 
-
-def read_thread(ser):
-    """
-    Runs in the background. Constantly checks for data from ESP32.
-    """
-    global running
-    while running:
-        try:
-            if ser.in_waiting > 0:
-                # Read line, replace errors so it doesn't crash on noise
-                line = ser.readline().decode('utf-8', errors='replace').strip()
-                if line:
-                    # \r clears the current line so the input prompt doesn't get messy
-                    # But if the ESP spams a lot, it will just scroll naturally
-                    print(f"[ESP32] {line}")
-            else:
-                # Sleep briefly to save CPU
-                time.sleep(0.01)
-
-        except Exception as e:
-            print(f"\n[Reader Error] {e}")
-            break
-
-
-def main():
-    global running
-    ser = None
-
+def read_from_esp32():
     try:
-        print(f"Connecting to {SERIAL_PORT}...")
+        print(f"Connecting to ESP32 on {SERIAL_PORT}...")
         ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-        time.sleep(2)  # Allow DTR reset to settle
-        print("Connected! Type a command and press ENTER. (Ctrl+C to quit)")
-        print("-" * 40)
 
-        # 1. Start the Background Reader
-        t = threading.Thread(target=read_thread, args=(ser,), daemon=True)
-        t.start()
+        # Give the connection a second to settle
+        time.sleep(2)
+        print(f"Connected! Waiting for data...")
 
-        # 2. Main Loop: Handles Writing
-        while running:
-            # Python's input() blocks until you hit Enter.
-            # Because reading is in a thread, incoming data still prints!
-            cmd = input()
-
-            if cmd.lower() in ['exit', 'quit']:
-                break
-
-            if ser.is_open:
-                # Add newline because Serial.readStringUntil('\n') expects it
-                payload = cmd + "\n"
-                ser.write(payload.encode('utf-8'))
-                # print(f" -> Sent: {cmd}") # Optional local echo
+        while True:
+            if ser.in_waiting > 0:
+                # Read a line, decode bytes to string, strip whitespace
+                try:
+                    line = ser.readline().decode('utf-8').strip()
+                    if line:
+                        print(f"[ESP32] {line}")
+                except UnicodeDecodeError:
+                    # Sometimes you get garbage bytes on startup, ignore them
+                    print("[RAW] (Decoding Error)")
 
     except serial.SerialException as e:
-        print(f"Error opening serial port: {e}")
+        print(f"Error: Could not open port {SERIAL_PORT}. Is it plugged in?")
+        print(f"Details: {e}")
     except KeyboardInterrupt:
         print("\nExiting...")
     finally:
-        running = False
-        if ser and ser.is_open:
+        if 'ser' in locals() and ser.is_open:
             ser.close()
-            print("Connection closed.")
+            print("Serial connection closed.")
 
 
 if __name__ == "__main__":
-    main()
+    read_from_esp32()
