@@ -5,7 +5,7 @@ import math
 import sys
 
 # --- Configuration ---
-WS_URL = "ws://10.215.238.142:8000"
+WS_URL = "ws://10.250.18.141:8000"
 
 DEADZONE = 0.15
 ROTATION_STEP = 0.05
@@ -50,7 +50,7 @@ async def controller_loop(ws):
         pygame.event.pump()
 
         # 1. Read Inputs
-        lx = deadzone(js.get_axis(0))
+        lx = -deadzone(js.get_axis(0))
         ly = -deadzone(js.get_axis(1))  # Invert Y if needed for your robot
 
         # 2. Normalize
@@ -80,7 +80,7 @@ async def controller_loop(ws):
         # 5. Send 'S' Packet (Speed)
         # Format: S,x,y,th
         packet = f"S,{smooth_x:.2f},{smooth_y:.2f},{rotation:.2f}"
-
+        print(packet)
         if packet != last_packet:
             await ws.send(packet)
             last_packet = packet
