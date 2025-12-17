@@ -61,3 +61,19 @@ def main():
             if ser.is_open:
                 # Add newline because Serial.readStringUntil('\n') expects it
                 payload = cmd + "\n"
+                ser.write(payload.encode('utf-8'))
+                # print(f" -> Sent: {cmd}") # Optional local echo
+
+    except serial.SerialException as e:
+        print(f"Error opening serial port: {e}")
+    except KeyboardInterrupt:
+        print("\nExiting...")
+    finally:
+        running = False
+        if ser and ser.is_open:
+            ser.close()
+            print("Connection closed.")
+
+
+if __name__ == "__main__":
+    main()
